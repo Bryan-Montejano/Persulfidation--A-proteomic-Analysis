@@ -1,0 +1,665 @@
+---
+title: "Análsis cualitativo"
+author: "Bryan Montejano Aldama"
+date: "2024-03-04"
+output:
+  word_document: default
+  df_print: paged
+  html_document:
+    df_print: paged
+  pdf_document: default
+lang: "es-ES"
+toc: true
+---
+
+# Anexo III
+```{r setup, include=FALSE, message=FALSE}
+# Establecer el directorio de trabajo
+setwd("~/Desktop/Cosas de R")
+
+#Paqueterías utilizadas
+#Instalación y carga de los paquetes necesarias para el análisis.
+
+#if (!require("BiocManager", quietly = TRUE))
+ #   install.packages("BiocManager")
+
+#BiocManager::install("clusterProfiler")
+
+#if (!require("BiocManager", quietly = TRUE))
+ #   install.packages("BiocManager")
+
+#BiocManager::install("AnnotationDbi")
+
+#if (!require("BiocManager", quietly = TRUE))
+ #   install.packages("BiocManager")
+
+#BiocManager::install("org.Rn.eg.db") #Base de datos de Ratus norvegicus
+
+#install.packages("fastmap")
+
+```
+## Análisis descriptivo
+
+### Coeficiente de Variación
+
+Se calculó como el cociente entre la desviación estándar y la media de los datos, y se expresó como un porcentaje: $$CV= (Desviación \ estandar /media)*100$$Para este y los siguientes análisis se utilizó el archivo "\~/Desktop/Cosas de R/b.csv". Además, se utilizó la paquetería de ggplot2, dplyr y readr.
+
+```{r, include=T, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(dplyr)
+pacman::p_load(readr)
+```
+
+```{r, warning=FALSE, message=FALSE}
+ # Archivo .csv utilizado 
+a <- read_csv("~/Desktop/Cosas de R/b.csv")
+a <- data.frame (a, row.names = c("C1", 
+                                  "C2", 
+                                  "C3", 
+                                  "O1", 
+                                  "O2", 
+                                  "O3", 
+                                  "S1", 
+                                  "S2", 
+                                  "S3")) 
+proteins <- data.frame(colnames(a)) # Se extrajo el nombre las 1395 proteínas
+```
+
+A partir de las tres condiciones experimentales: Control o "C", NaSH o "S", y OGD o "O" se aplicó la función de CV para cada proteína usando los valores relativos de abundancia en "\~/Desktop/Cosas de R/b.csv". Se obtuvieron 3 figuras que expresan el CV de cada proteína en relacion al log10 de su media.
+
+#### Control
+
+```{r, warning=FALSE, message=FALSE}
+#Control (CV y promedio de abundancia relativa)
+cvC <- sapply(a[1:3,], function(x) sd(x) / mean(x) * 100) #Función aplicada a fila de muestras control
+meanC <- sapply(a[1:3,], mean) #Función aplicada a fila de muestras control
+dfC <- data.frame(meanC, cvC) #Data frame que contiene media y CV de cada proteína
+```
+
+#### NaHS
+
+```{r, warning=FALSE}
+#NaHS (CV y promedio de abundancia relativa)
+cvS <- sapply(a[7:9,], function(x) sd(x) / mean(x) * 100) #Función aplicada a fila de muestras NaHS
+meanS <- sapply(a[7:9,], mean) #Función aplicada a fila de muestras NaHS
+dfS <- data.frame(meanS, cvS) #Data frame que contiene media y CV de cada proteína
+```
+
+#### OGD
+
+```{r, warning=FALSE}
+#OGD (CV y promedio de abundancia relativa)
+cvO <- sapply(a[4:6,], function(x) sd(x) / mean(x) * 100) #Función aplicada a fila de muestras OGD
+meanO <- sapply(a[4:6,], mean)  #Función aplicada a fila de muestras OGD
+dfO <- data.frame(meanO, cvO)  #Data frame que contiene media y CV de cada proteína
+```
+
+#### Figura de las tres muestras (Control, NaHS y OGD)
+
+Figura que incluye todas las proteínas en las tres condiciones experimentales:
+
+```{r, include=FALSE}
+#Construcción de un data frame que incluya información de las tres tipos de muestra
+df1 <- data.frame(x=meanC, 
+                  y = cvC, Muestra = "Control") 
+df2 <- data.frame(x=meanO, 
+                  y = cvO, Muestra = "OGD")
+df3 <- data.frame(x=meanS, 
+                  y = cvS, Muestra = "NaHS")
+
+#Data frame con información de los tres tipos de muestra
+combined_data <- rbind(df1, df2, df3)
+```
+
+```{r, warning=FALSE}
+#Plot de la Figura de las tres muestras
+ggplot(combined_data, aes(x = log10(x), y = y, color = Muestra)) +
+  geom_point(size=1) +
+  ggtitle("Coeficiente de variación") +
+  xlab("log10(Media)") + ylab("CV (%)")
+```
+
+------------------------------------------------------------------------
+
+## Análisis PCA
+
+Análisis PCA de las 1395 proteínas. Representa la variación presente en el conjunto de datos expresada en variables transformadas (Componentes principales). Se utilizó la paquetería factorextra, así como el documento "\~/Desktop/Cosas de R/b.csv" previamente cargado como input.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(factoextra)
+pacman::p_load(dplyr, tidyr, gapminder, tidyverse, cowplot)
+library(ggplot2)
+```
+
+### Estandarización de datos
+
+Se estandarizaron los datos siguiendo una aproximación robusta que contempla la mediana y el rango intercuantílico (IQR) de las 1395 variables (proteínas) siguiendo la siguiente ecuación:
+
+$$Estandarización\ robusta= (X -mediana)/IQR $$
+
+```{r, include=T, warning=FALSE, message=FALSE}
+#Mediana e Índice intercuantílico (IQR) de cada proteína. Se consideraron las 9 muestras
+
+mediana <- sapply(a, median) #Vector con 1395 elementos
+iqr <- sapply(a, IQR) #Vector con 1395 elementos
+```
+
+Usando la herramienta de iteración `for` se corre la función `robust_scale`, para las 12,555 celdas del data frame (9 X 1395). El data frame resultante se guarda en "res".
+
+```{r, include=T, warning=FALSE, message=FALSE}
+#Función de estandarización robusta
+robust_scale<- function(x, mediana, iqr)
+  { y=(x-mediana)/(iqr)} 
+
+#Data frame vacío para almacenar resultados de la iteración
+res <- data.frame (C1 = c(), 
+                   C2 = c(), 
+                   C3 = c(), 
+                   O1 = c(), 
+                   O2 = c(), 
+                   O3 = c(), 
+                   S1 = c(), 
+                   S2 = c(), 
+                   S3 = c()) 
+  
+#Iteración. Para cada elemento en [i,j] se aplicó la función con la mediana o iqr en [j]
+for (j in 1:1395) {
+  for (i in 1:9){
+    res[i,j] <- robust_scale(a[i,j], mediana[j], iqr[j])}
+  }
+```
+
+En orden de eliminar resultados no compatibles, se eliminaron las no compatibes usando la función `na.omit` después de transponer el data frame. Además se estructuró el data frame con nombre de filas y columnas correspondiente para identificar cada valor.
+
+```{r, include=T, warning=FALSE, message=FALSE}
+#Se estructura al data frame con nombres de filas
+res <- data.frame(res, row.names = c("C1", 
+                                     "C2", 
+                                     "C3", 
+                                     "O1", 
+                                     "O2", 
+                                     "O3", 
+                                     "S1", 
+                                     "S2", 
+                                     "S3")) 
+res <- data.frame(t(res)) #Se transpone el data frame
+
+#Se estructura el data frame con nombres de las proteínas
+res <- data.frame (res, row.names = t(proteins)) 
+res <- data.frame(t(res)) #Se transpone y se reserva para las funciones subsecuentes
+
+#Se aplica la función para eliminar valores no compatibles
+res1 <- data.frame(t(na.omit(t(res)))) 
+```
+
+### Función prcomp
+
+Cargando la función `prcomp` del paquete Factorextra con el data frame "res1", fue posible la visualización de las componentes individuales del PCA. Se indicó a la función el parámetro "scale=F" debido a que se contaba con la matriz ya estandarizada.
+
+```{r, include=T, warning=FALSE, message=FALSE}
+#Se corrió la función y los resultados se almacenaron en "pca"
+pca <- prcomp(res1, scale = F) 
+```
+
+Variación explicada por cada de componente principal:
+
+```{r, include=T, warning=FALSE, message=FALSE}
+#Resumen que muestra la variación explicada 
+summary(pca) 
+```
+
+### Visualización con dos componentes principales
+
+```{r, include=T, warning=FALSE, message=FALSE}
+#Se extrajeron los valores de las componentes principales de cada muestra
+pcaind <-as.data.frame(pca$x) 
+
+ggplot(data = pcaind, mapping = aes(y=PC1, x=PC2, z=PC3)) +
+geom_point(color=c('red', 'red', 'red', 'green', 'green', 'green', 'blue', 'blue', 'blue')) +
+  ggtitle("Análisis de componentes principales")+
+  xlab("PC1 (90.5%)")+ #Obtenido con la variación explicada 
+  ylab("PC2(6.2%)")+
+  geom_text(label=c("C1", "C2", "C3", "O1", "O2", "O3", "S1", "S2", "S3"))
+```
+
+## Identificación de proteínas persulfuradas
+
+Proteínas con marca identificada como , **DCP-Bio1**, o **DCP-Bio1 hidrolizado** fueron filtrados a partir de los archivo .csv generados en el análisis cualitativo. Se explica con detalle el código para la condición control en 4 pasos. El mismo procedimiento fue aplicado a las otras dos condiciones.
+
+### Preparación de la matriz de datos 
+
+```{r message=FALSE, warning=FALSE, include=T}
+#Paso 1: Se cargó el archivo .csv de cada uno de los 3 replicados biológicos en formato data frame. Se filtraron las proteínas por aquellas que contenían "DCP-Bio1", o "DCP-Bio1 hidrolizado" en la columna "xxx" para cada replicado. 
+
+#Carga de datos
+
+C1 <- read_csv("~/Desktop/Cosas de R/Identificacion/C1-20231110_604_1_C1_IA_final_peptide.csv") 
+C2 <- read_csv("~/Desktop/Cosas de R/Identificacion/C2-20231110_607_4_C2_IA_final_peptide.csv")
+C3 <- read_csv("~/Desktop/Cosas de R/Identificacion/C3-20231110_610_7_C3_IA_final_peptide.csv")
+
+# Paso 2: Filtrado de datos a aquello con "DCP-Bio1" en la columna "peptide.modification" y reducción de los data frames a 3 columnas: "protein.Accession", "protein.Entry.x" y "protein.Description"
+
+C1filtrado <- C1[grepl("DCP-Bio1", C1$peptide.modification), ]
+
+C1filtrado <- data.frame(C1filtrado[,2:4])
+
+C2filtrado <- C2[grepl("DCP-Bio1", C2$peptide.modification), ]
+C2filtrado <- data.frame(C2filtrado[,2:4])
+
+C3filtrado <- C3[grepl("DCP-Bio1", C3$peptide.modification), ]
+C3filtrado <- data.frame(C3filtrado[,2:4])
+
+#Paso 3: Se consolidaron los 3 replicados en un solo data frame. Para una mejor identificación de las proteínas, a partir de la columna "protein.Description" se usó la función "split" para pasar texto a columnas. 
+
+C1C2C3<- rbind(C1filtrado, C2filtrado, C3filtrado)
+
+C1C2C3T<- data.frame(names=C1C2C3$protein.Description) 
+
+protein_list_Control<- C1
+
+library(tidyr)
+C1C2C3T <- C1C2C3T %>%
+  mutate(split = strsplit(as.character(names), "=")) %>%
+  transmute(
+    Proteínas_persulfuradas = sapply(split, `[`, 1),
+    key2 = sapply(split, `[`, 2),
+    key3 = sapply(split, `[`, 3),
+    key4 = sapply(split, `[`, 4),
+    key5 = sapply(split, `[`, 5),
+    key6 = sapply(split, `[`, 6)
+  )
+
+#Paso 4: Se generó una lista que indica la identificación de proteínas persulfuradas.
+
+PersulfuradasControl <- C1C2C3T %>% distinct(Proteínas_persulfuradas)
+PersulfuradasControl_protein.accession <- C1C2C3 %>% distinct(C1C2C3$protein.Accession)
+PersulfuradasControl_protein.accession <- as.character(PersulfuradasControl_protein.accession$`C1C2C3$protein.Accession`)
+```
+
+```{r, include=T, warning=FALSE, message=FALSE}
+#Paso 1
+S1 <- read_csv("~/Desktop/Cosas de R/Identificacion/S1-20231110_606_3_S1_IA_final_peptide.csv")
+S2 <- read_csv("~/Desktop/Cosas de R/Identificacion/S2-20231110_609_6_S2_IA_final_peptide.csv")
+S3 <- read_csv("~/Desktop/Cosas de R/Identificacion/S3-20231110_612_9_S3_IA_final_peptide.csv")
+
+#Paso 2
+
+S1filtrado <- S1[grepl("DCP-Bio1", S1$peptide.modification), ]
+S1filtrado <- data.frame(S1filtrado[,2:4])
+
+S2filtrado <- S2[grepl("DCP-Bio1", S2$peptide.modification), ]
+S2filtrado <- data.frame(S2filtrado[,2:4])
+
+S3filtrado <- S3[grepl("DCP-Bio1", S3$peptide.modification), ]
+S3filtrado <- data.frame(S3filtrado[,2:4])
+
+#Paso 3
+
+S1S2S3<- rbind(S1filtrado, S2filtrado, S3filtrado)
+
+S1S2S3T<- data.frame(names=S1S2S3$protein.Description)
+
+
+library(tidyr)
+S1S2S3T <- S1S2S3T %>%
+  mutate(split = strsplit(as.character(names), "=")) %>%
+  transmute(
+    Proteínas_persulfuradas = sapply(split, `[`, 1),
+    key2 = sapply(split, `[`, 2),
+    key3 = sapply(split, `[`, 3),
+    key4 = sapply(split, `[`, 4),
+    key5 = sapply(split, `[`, 5),
+    key6 = sapply(split, `[`, 6)
+  )
+
+#Paso 4
+
+PersulfuradasNaHS <- S1S2S3T %>% distinct(Proteínas_persulfuradas)
+PersulfuradasNaHS_protein.accession <- S1S2S3 %>% distinct(S1S2S3$protein.Accession)
+PersulfuradasNaHS_protein.accession <- as.character(PersulfuradasNaHS_protein.accession$`S1S2S3$protein.Accession`)
+```
+
+```{r, include=T, warning=FALSE, message=FALSE}
+#Paso 1
+O1 <- read_csv("~/Desktop/Cosas de R/Identificacion/O1-20231110_605_2_O1_IA_final_peptide.csv")
+O2 <- read_csv("~/Desktop/Cosas de R/Identificacion/O2-20231110_608_5_O2_IA_final_peptide.csv")
+O3 <- read_csv("~/Desktop/Cosas de R/Identificacion/O3-20231110_611_8_O3_IA_final_peptide.csv")
+
+#Paso 2
+
+O1filtrado <- O1[grepl("DCP-Bio1", O1$peptide.modification), ]
+O1filtrado <- data.frame(O1filtrado[,2:4])
+
+O2filtrado <- O2[grepl("DCP-Bio1", O2$peptide.modification), ]
+O2filtrado <- data.frame(O2filtrado[,2:4])
+
+O3filtrado <- O3[grepl("DCP-Bio1", O3$peptide.modification), ]
+O3filtrado <- data.frame(O3filtrado[,2:4])
+
+#Paso 3
+
+O1O2O3 <- rbind(O1filtrado, O3filtrado, O2filtrado)
+
+O1O2O3T<- data.frame(names=O1O2O3$protein.Description)
+
+
+library(tidyr)
+O1O2O3T <- O1O2O3T %>%
+  mutate(split = strsplit(as.character(names), "=")) %>%
+  transmute(
+    Proteínas_persulfuradas = sapply(split, `[`, 1),
+    key2 = sapply(split, `[`, 2),
+    key3 = sapply(split, `[`, 3),
+    key4 = sapply(split, `[`, 4),
+    key5 = sapply(split, `[`, 5),
+    key6 = sapply(split, `[`, 6)
+  )
+
+#Paso 4
+
+PersulfuradasOGD <- O1O2O3T %>% distinct(Proteínas_persulfuradas)
+PersulfuradasOGD_protein.accession <- O1O2O3 %>% distinct(O1O2O3$protein.Accession)
+PersulfuradasOGD_protein.accession <- as.character(PersulfuradasOGD_protein.accession$`O1O2O3$protein.Accession`)
+```
+
+### Visualización de proteínas
+
+Se creó un Diagrama de Venn a partir de la lista de proteínas persulfuradas de cada condición.
+
+```{r, include=T, warning=FALSE, message=FALSE}
+
+# Cargar el paquete
+library(VennDiagram); library(grid); library(futile.logger)
+
+#Transformación de data frames a vectores
+
+PersulfuradasControl <- as.character(PersulfuradasControl$Proteínas_persulfuradas)
+PersulfuradasNaHS <- as.character(PersulfuradasNaHS$Proteínas_persulfuradas)
+PersulfuradasOGD <- as.character(PersulfuradasOGD$Proteínas_persulfuradas)
+
+#Creación del diagrama de Venn
+  venn.plot <- venn.diagram(
+    x = list(Set1 = PersulfuradasControl, 
+             Set2 = PersulfuradasNaHS, 
+             Set3 = PersulfuradasOGD),
+    category.names = c("Control", "NaHS", "OGD"),
+    fill = c("red", "blue", "green"),  # Colores de los círculos
+    alpha = 0.5,  # Transparencia de los colores
+    cat.cex = 1.5,  # Tamaño del texto de las categorías
+    cex = 1.5,  # Tamaño del texto de los números
+    fontface = "bold",  # Estilo del texto
+    cat.fontface = "bold",
+    filename = NULL)  
+
+# Dibujar el diagrama
+grid.draw(venn.plot)
+```
+
+####Control
+```{r, include=T, warning=FALSE, message=FALSE}
+#Proteínas identificadas únicamente en la condición Control
+
+Venn_Control <- setdiff(PersulfuradasControl, union(PersulfuradasNaHS, PersulfuradasOGD))
+Lista_Control <- setdiff(PersulfuradasControl_protein.accession, union(PersulfuradasNaHS_protein.accession, PersulfuradasOGD_protein.accession))
+
+knitr::kable(sort(Venn_Control))
+```
+
+####Control y NaHS
+```{r, include=T, warning=FALSE, message=FALSE}
+#Proteínas identificadas únicamente en la condición Control y NaHS
+
+Venn_Control_X_NaHS <- setdiff(intersect(PersulfuradasControl, PersulfuradasNaHS), PersulfuradasOGD)
+
+Lista_Control_X_NaHS <- setdiff(intersect(PersulfuradasControl_protein.accession, PersulfuradasNaHS_protein.accession), PersulfuradasOGD_protein.accession)
+
+knitr::kable(Venn_Control_X_NaHS)
+```
+
+####Control y OGD
+```{r, include=T, warning=FALSE, message=FALSE}
+#Proteínas identificadas únicamente en la condición Control y OGD
+
+Venn_Control_X_OGD <- setdiff(intersect(PersulfuradasControl, PersulfuradasOGD), PersulfuradasNaHS)
+Lista_Control_X_OGD <- setdiff(intersect(PersulfuradasControl_protein.accession, PersulfuradasOGD_protein.accession), PersulfuradasNaHS_protein.accession)
+
+knitr::kable(sort(Venn_Control_X_OGD))
+```
+
+####Control, NaHS y OGD
+```{r, include=T, warning=FALSE, message=FALSE}
+#Proteínas identificadas únicamente en la condición Control, NaHS y OGD
+
+Venn_Control_X_OGD_X_NaHS <- Reduce(intersect, list(PersulfuradasControl, PersulfuradasNaHS, PersulfuradasOGD))
+
+Lista_Control_X_OGD_NaHS <- Reduce(intersect, list(PersulfuradasControl_protein.accession, PersulfuradasNaHS_protein.accession, PersulfuradasOGD_protein.accession))
+
+knitr::kable(sort(Venn_Control_X_OGD_X_NaHS))
+```
+
+####NaHS
+```{r, include=T, warning=FALSE, message=FALSE}
+#Proteínas identificadas únicamente en la condición NaHS
+
+Venn_NaHS <- setdiff(PersulfuradasNaHS, union(PersulfuradasControl, PersulfuradasOGD))
+Lista_NaHS <- setdiff(PersulfuradasNaHS_protein.accession, union(PersulfuradasControl_protein.accession, PersulfuradasOGD_protein.accession))
+
+knitr::kable(sort(Venn_NaHS))
+```
+
+####OGD
+```{r, include=T, warning=FALSE, message=FALSE}
+#Proteínas identificadas Únicamente en la condición OGD
+
+Venn_OGD <- setdiff(PersulfuradasOGD, union(PersulfuradasControl, PersulfuradasNaHS))
+Lista_OGD <- setdiff(PersulfuradasOGD_protein.accession, union(PersulfuradasControl_protein.accession, PersulfuradasNaHS_protein.accession))
+
+knitr::kable(sort(Venn_OGD))
+```
+
+####OGD y NaHS
+```{r, include=T, warning=FALSE, message=FALSE}
+#Proteínas identificadas únicamente en la condición OGD y NaHS
+
+Venn_OGD_X_NaHS <- setdiff(intersect(PersulfuradasOGD, PersulfuradasNaHS), PersulfuradasControl)
+
+Lista_OGD_X_NaHS <- setdiff(intersect(PersulfuradasOGD_protein.accession, PersulfuradasNaHS_protein.accession), PersulfuradasControl_protein.accession)
+
+knitr::kable(sort(Venn_OGD_X_NaHS))
+```
+
+## Análisis Gene Ontology (GO)
+
+El análisis GO comenzó con la extracción del identificador Uniprot vinculado a la identificación del péptido con la señal de DCP-Bio. Luego, este identificador se tradujo a ENSEMBL utilizando la biblioteca "biomaRt". Para cada condición, se llevó a cabo el análisis GO utilizando herramientas como "clusterProfiler", "AnnotationDbi" y la base de datos de Rattus norvegicus como fondo ("org.Rn.eg.db").
+
+### Preparación de funciones
+```{r, include=F, warning=FALSE, message=FALSE}
+#Se cargaron e hicieron disponibles los paquetes para el uso de sus funciones
+library(clusterProfiler)
+library(org.Rn.eg.db)
+library(AnnotationDbi)
+library(biomaRt)
+library(fastmap)
+
+# Se conectó a Ensembl utilizando biomaRt usando el conjunto de datos de Ratus norvegicus
+ensembl <- useMart("ensembl", dataset = "rnorvegicus_gene_ensembl") 
+
+#Conversión de identificadores Uniprot a Ensembl usando iteración para cada condición
+
+Lista_ENSEMBL <- c()
+Lista_UNIPROT<- list(Lista_Control, Lista_Control_X_NaHS, Lista_Control_X_OGD, Lista_Control_X_OGD_NaHS, Lista_NaHS, Lista_OGD, Lista_OGD_X_NaHS)
+
+for (i in 1:length(Lista_UNIPROT)){
+  genes <- getBM(
+    attributes = c("uniprot_gn_id", "ensembl_gene_id"),
+    filters = "uniprot_gn_id",
+    values = Lista_UNIPROT[i],
+    mart = ensembl)  
+  Lista_ENSEMBL <- append(Lista_ENSEMBL, genes)}
+
+# Cambió de nombre de los elementos de la lista generada
+names(Lista_ENSEMBL)[2] <- "Lista_Control"
+names(Lista_ENSEMBL)[4] <- "Lista_Control_X_NaHS"
+names(Lista_ENSEMBL)[6] <- "Lista_Control_X_OGD"
+names(Lista_ENSEMBL)[8] <- "Lista_Control_X_OGD_NaHS"
+names(Lista_ENSEMBL)[10] <- "Lista_NaHS"
+names(Lista_ENSEMBL)[12] <- "Lista_OGD"
+names(Lista_ENSEMBL)[14] <- "Lista_OGD_X_NaHS"
+```
+
+###Control
+```{r message=FALSE, warning=FALSE, include=T}
+#Función "enrichGO", parte del paquete "clusterProfiler", se utilizó para análisis de genes que están asociados con ciertos términos biológicos específicos. 
+GO_Control <- enrichGO(gene = Lista_ENSEMBL[["Lista_Control"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_Control_Plot <- plot(barplot(GO_Control, showCategory = 15, width = F))
+```
+
+###Control y NaHS
+```{r, include=T, warning=FALSE, message=FALSE}
+GO_Control_X_NaHS <- enrichGO(gene = Lista_ENSEMBL[["Lista_Control_X_NaHS"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_Control_X_NaHS_Plot <- plot(barplot(GO_Control_X_NaHS, showCategory = 15))
+```
+
+###Control y OGD
+```{r, include=T, warning=FALSE, message=FALSE}
+GO_Control_X_OGD <- enrichGO(gene = Lista_ENSEMBL[["Lista_Control_X_OGD"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_Control_X_OGD_Plot <- plot(barplot(GO_Control_X_OGD, showCategory = 15))
+```
+
+###Control, OGD y NaHS
+```{r, include=T, warning=FALSE, message=FALSE}
+GO_Control_X_OGD_NaHS <- enrichGO(gene = Lista_ENSEMBL[["Lista_Control_X_OGD_NaHS"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_Control_X_OGD_NaHS_Plot <- plot(barplot(GO_Control_X_OGD_NaHS, showCategory = 15))
+```
+
+###NaHS
+```{r, include=T, warning=FALSE, message=FALSE}
+GO_NaHS <- enrichGO(gene = Lista_ENSEMBL[["Lista_NaHS"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_NaHS_Plot <- plot(barplot(GO_NaHS, showCategory = 15))
+```
+
+###OGD
+```{r, include=T, warning=FALSE, message=FALSE}
+GO_OGD <- enrichGO(gene = Lista_ENSEMBL[["Lista_OGD"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_OGD_Plot <- plot(barplot(GO_OGD, showCategory = 15))
+```
+
+###OGD y NaHS
+```{r, include=T, warning=FALSE, message=FALSE}
+GO_OGD_X_NaHS <- enrichGO(gene = Lista_ENSEMBL[["Lista_OGD_X_NaHS"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_OGD_X_NaHS_Plot <- plot(barplot(GO_OGD_X_NaHS, showCategory = 15))
+```
+## Análisis Gene Ontology muestras completas (GO)
+
+
+```{r}
+Lista_S_UNIPROT<- list(PersulfuradasControl_protein.accession, PersulfuradasNaHS_protein.accession, PersulfuradasOGD_protein.accession )
+Lista_S_ENSEMBL <- c()
+for (i in 1:length(Lista_S_UNIPROT)){
+  genes <- getBM(
+    attributes = c("uniprot_gn_id", "ensembl_gene_id"),
+    filters = "uniprot_gn_id",
+    values = Lista_S_UNIPROT[i],
+    mart = ensembl)  
+  Lista_S_ENSEMBL <- append(Lista_S_ENSEMBL, genes)}
+
+# Cambió de nombre de los elementos de la lista generada
+names(Lista_S_ENSEMBL)[2] <- "Lista_Control"
+names(Lista_S_ENSEMBL)[4] <- "Lista_NaHS"
+names(Lista_S_ENSEMBL)[6] <- "Lista_OGD"
+```
+###Control
+```{r, include=T, warning=FALSE, message=FALSE}
+GO_S_Control <- enrichGO(gene = Lista_S_ENSEMBL[["Lista_Control"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_S_Control_Plot <- plot(barplot(GO_S_Control, showCategory = 20))
+```
+### NaHS
+```{r, include=T, warning=FALSE, message=FALSE}
+GO_S_NaHS <- enrichGO(gene = Lista_S_ENSEMBL[["Lista_NaHS"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_S_NaHS_Plot <- plot(barplot(GO_S_NaHS, showCategory = 20))
+```
+### OGD
+```{r, include=T, warning=FALSE, message=FALSE}
+GO_S_OGD <- enrichGO(gene = Lista_S_ENSEMBL[["Lista_OGD"]] , OrgDb = "org.Rn.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+GO_S_OGD_Plot <- plot(barplot(GO_S_OGD, showCategory = 20))
+```
+
+
+```{r, include=F, warning=FALSE, message=FALSE}
+
+#Control
+png("GO_Control_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_Control_Plot)
+dev.off()
+
+#Control y NaHS
+
+png("GO_Control_X_NaHS_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_Control_X_NaHS_Plot)
+dev.off()
+
+#Control y OGD
+
+png("GO_Control_X_OGD_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_Control_X_OGD_Plot)
+dev.off()
+
+#Control, OGD y NaHS
+
+png("GO_Control_X_OGD_NaHS_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_Control_X_OGD_NaHS_Plot)
+dev.off()
+
+
+#NaHS
+
+png("GO_NaHS_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_NaHS_Plot)
+dev.off()
+
+#OGD
+
+png("GO_OGD_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_OGD_Plot)
+dev.off()
+
+#OGD y NaHS
+
+png("GO_OGD_X_NaHS_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_OGD_X_NaHS_Plot)
+dev.off()
+
+#Control (Toda la base)
+
+png("GO_S_Control_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_S_Control_Plot)
+dev.off()
+
+
+#NaHS (Toda la base)
+
+png("GO_S_NaHS_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_S_NaHS_Plot)
+dev.off()
+
+
+#OGD (Toda la base)
+
+png("GO_S_OGD_Plot.png", res = 250, width = 1400, height = 1800)
+print(GO_S_OGD_Plot)
+dev.off()
+
+```
+
+
+
