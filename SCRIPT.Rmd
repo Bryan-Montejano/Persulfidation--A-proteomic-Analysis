@@ -15,7 +15,7 @@ toc: true
 # Anexo III
 ```{r setup, include=FALSE, message=FALSE}
 # Establecer el directorio de trabajo
-setwd("~/Desktop/Cosas de R")
+setwd("~/Desktop/Proyectos/Proyecto de maestría/Persulfidation--A-proteomic-Analysis")
 
 #Paqueterías utilizadas
 #Instalación y carga de los paquetes necesarias para el análisis.
