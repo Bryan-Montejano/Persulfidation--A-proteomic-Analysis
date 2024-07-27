@@ -6,3 +6,5 @@ This is a proteomic analysis of the project called: "Regulation of energy metabo
 
 Use the **‘SCRIPT.pdf’** file for a quick and static view of the content. On the other hand, refer the **‘SCRIPT.Rmd’** file if you want to run the code in R and obtain dynamic and comprehensive outputs. Request from the CVS files.
 
+All the comments are written in spanish. 
+
